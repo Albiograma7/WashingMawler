@@ -1,4 +1,9 @@
-const { getVoiceConnection } = require('@discordjs/voice'); // Añade esto al inicio con los otros requires
+const { getVoiceConnection } = require('@discordjs/voice');
+// Importaciones necesarias al inicio
+const { Client, GatewayIntentBits, ChannelType } = require('discord.js');
+const { joinVoiceChannel, createAudioPlayer, createAudioResource, VoiceConnectionStatus, AudioPlayerStatus } = require('@discordjs/voice');
+const path = require('path');
+const fs = require('fs');
 
 const client = new Client({
   intents: [
