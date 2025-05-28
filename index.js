@@ -15,19 +15,28 @@ client.on('ready', () => {
 });
 
 client.on('voiceStateUpdate', (oldState, newState) => {
-  const channel = newState.channel || oldState.channel;
-  if (!channel || channel.members.has(client.user.id)) return;
+  try {
+    // Verifica si el cambio ocurrió en un canal de voz
+    const channel = newState.channel || oldState.channel;
+    if (!channel || channel.type !== 2 || channel.members.has(client.user.id)) return; // type 2 = GUILD_VOICE
 
-  if (channel.members.size === 4) {
-    channel.join()
-      .then(connection => {
-        console.log(`🔊 Unido a ${channel.name}`);
-        // Opcional: Reproducir audio
-        connection.play('notification.mp3').on('finish', () => {
-          connection.disconnect();
+    const members = channel.members.filter(m => !m.user.bot).size; // Excluye bots
+
+    if (members === 4) {
+      channel.join()
+        .then(connection => {
+          console.log(`🔊 Conectado a ${channel.name}`);
+          // Opcional: Reproduce un audio
+          connection.play('notification.mp3').on('finish', () => {
+            connection.disconnect();
+          });
+        })
+        .catch(error => {
+          console.error('Error al unirse:', error);
         });
-      })
-      .catch(console.error);
+    }
+  } catch (error) {
+    console.error('Error en voiceStateUpdate:', error);
   }
 });
 
