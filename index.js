@@ -13,6 +13,9 @@ const client = new Client({
   ]
 });
 
+// Variable para evitar múltiples activaciones
+const recentlyProcessed = new Set();
+
 // Eventos básicos del bot
 client.on('ready', () => {
   console.log(`✅ ${client.user.tag} está conectado y listo!`);
@@ -37,6 +40,28 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
     console.log(`👥 ${channel.name} tiene ${members} miembros`);
 
     if (members === 4) {
+      // Crear clave única para evitar duplicados
+      const channelKey = `${channel.id}-${Date.now()}`;
+      
+      // Verificar si ya procesamos este canal recientemente (últimos 5 segundos)
+      const existingKey = Array.from(recentlyProcessed).find(key => 
+        key.startsWith(channel.id) && 
+        (Date.now() - parseInt(key.split('-')[1])) < 5000
+      );
+      
+      if (existingKey) {
+        console.log('⏭️ Canal ya procesado recientemente, omitiendo...');
+        return;
+      }
+      
+      // Agregar a la lista de procesados
+      recentlyProcessed.add(channelKey);
+      
+      // Limpiar entradas antiguas
+      setTimeout(() => {
+        recentlyProcessed.delete(channelKey);
+      }, 10000);
+
       try {
         const connection = joinVoiceChannel({
           channelId: channel.id,
@@ -105,16 +130,16 @@ function playNotificationSound(connection) {
     
     console.log('🎵 Reproduciendo notification.mp3...');
     
-    // Event listeners del reproductor
-    player.on(AudioPlayerStatus.Playing, () => {
+    // Event listeners del reproductor (solo una vez por reproductor)
+    player.once(AudioPlayerStatus.Playing, () => {
       console.log('🎵 Audio reproduciéndose');
     });
     
-    player.on(AudioPlayerStatus.Idle, () => {
+    player.once(AudioPlayerStatus.Idle, () => {
       console.log('✅ Audio terminado');
     });
     
-    player.on('error', (error) => {
+    player.once('error', (error) => {
       console.error('❌ Error reproduciendo audio:', error);
     });
     
