@@ -1,49 +1,31 @@
-require('dotenv').config();
-const { Client, GatewayIntentBits, ChannelType } = require('discord.js');
-const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus, VoiceConnectionStatus } = require('@discordjs/voice');
-const path = require('path');
-const fs = require('fs');
+const { getVoiceConnection } = require('@discordjs/voice'); // Añade esto al inicio con los otros requires
 
-const client = new Client({
-  intents: [
-    GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildVoiceStates,
-    GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent
-  ]
-});
-
-// Variable para evitar múltiples activaciones
-const recentlyProcessed = new Set();
-
-// Eventos básicos del bot
-client.on('ready', () => {
-  console.log(`✅ ${client.user.tag} está conectado y listo!`);
-  console.log(`🔢 Conectado a ${client.guilds.cache.size} servidor(es)`);
-  
-  // Verificar si el archivo de audio existe
-  const audioPath = path.join(__dirname, 'notification.mp3');
-  if (fs.existsSync(audioPath)) {
-    console.log('🎵 Archivo de audio encontrado: notification.mp3');
-  } else {
-    console.warn('⚠️ Archivo notification.mp3 no encontrado en la carpeta del proyecto');
-  }
-});
+// ... (el resto de tus imports y configuración inicial permanece igual)
 
 client.on('voiceStateUpdate', async (oldState, newState) => {
   try {
-    // Verifica si el cambio ocurrió en un canal de voz
     const channel = newState.channel || oldState.channel;
-    if (!channel || channel.type !== ChannelType.GuildVoice || channel.members.has(client.user.id)) return;
+    if (!channel || channel.type !== ChannelType.GuildVoice) return;
 
-    const members = channel.members.filter(m => !m.user.bot).size; // Excluye bots
+    // Verificar si el bot está en este canal
+    const isBotInChannel = channel.members.has(client.user.id);
+
+    // Caso 1: Si el bot está solo en el canal, desconectarse
+    if (isBotInChannel && channel.members.size === 1) {
+      const connection = getVoiceConnection(channel.guild.id);
+      if (connection) {
+        connection.destroy();
+        console.log(`🔇 Desconectado de ${channel.name} (canal vacío)`);
+      }
+      return;
+    }
+
+    // Caso 2: Lógica original para unirse cuando hay 4 usuarios
+    const members = channel.members.filter(m => !m.user.bot).size;
     console.log(`👥 ${channel.name} tiene ${members} miembros`);
 
-    if (members === 4) {
-      // Crear clave única para evitar duplicados
+    if (members === 4 && !isBotInChannel) {
       const channelKey = `${channel.id}-${Date.now()}`;
-      
-      // Verificar si ya procesamos este canal recientemente (últimos 5 segundos)
       const existingKey = Array.from(recentlyProcessed).find(key => 
         key.startsWith(channel.id) && 
         (Date.now() - parseInt(key.split('-')[1])) < 5000
@@ -54,13 +36,8 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
         return;
       }
       
-      // Agregar a la lista de procesados
       recentlyProcessed.add(channelKey);
-      
-      // Limpiar entradas antiguas
-      setTimeout(() => {
-        recentlyProcessed.delete(channelKey);
-      }, 10000);
+      setTimeout(() => recentlyProcessed.delete(channelKey), 10000);
 
       try {
         const connection = joinVoiceChannel({
@@ -71,29 +48,44 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
         
         console.log(`🔊 Conectado a ${channel.name} (4 usuarios detectados)`);
         
-        // Esperar a que la conexión esté lista
+        // Configurar el verificador de estado del canal
+        const checkChannelState = () => {
+          const currentChannel = client.channels.cache.get(channel.id);
+          if (currentChannel && currentChannel.members.size === 1) {
+            connection.destroy();
+            console.log('🔇 Desconectado (solo el bot en el canal)');
+          }
+        };
+
+        // Verificar periódicamente
+        const checkInterval = setInterval(checkChannelState, 3000);
+        
         connection.on(VoiceConnectionStatus.Ready, () => {
           console.log('🎵 Conexión de voz lista, reproduciendo audio...');
           playNotificationSound(connection);
         });
         
-        // Si ya está listo, reproducir inmediatamente
         if (connection.state.status === VoiceConnectionStatus.Ready) {
           playNotificationSound(connection);
         }
         
-        // Manejo de errores de conexión
         connection.on('error', (error) => {
           console.error('❌ Error en la conexión de voz:', error);
+          clearInterval(checkInterval);
+        });
+
+        connection.on(VoiceConnectionStatus.Destroyed, () => {
+          clearInterval(checkInterval);
         });
         
-        // Desconectarse después de un tiempo (opcional)
+        // Desconexión después de 10 segundos (opcional)
         setTimeout(() => {
           if (connection.state.status !== VoiceConnectionStatus.Destroyed) {
             connection.destroy();
-            console.log('🔇 Desconectado del canal de voz');
+            clearInterval(checkInterval);
+            console.log('🔇 Desconectado por tiempo de inactividad');
           }
-        }, 10000); // 10 segundos
+        }, 10000);
         
       } catch (error) {
         console.error('❌ Error al unirse al canal de voz:', error);
