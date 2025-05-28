@@ -1,13 +1,15 @@
 require('dotenv').config();
 const { Client, GatewayIntentBits, ChannelType } = require('discord.js');
-const { joinVoiceChannel } = require('@discordjs/voice');
+const { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus, VoiceConnectionStatus } = require('@discordjs/voice');
+const path = require('path');
+const fs = require('fs');
 
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildVoiceStates,
     GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent // Necesario para leer el contenido de los mensajes
+    GatewayIntentBits.MessageContent
   ]
 });
 
@@ -15,6 +17,14 @@ const client = new Client({
 client.on('ready', () => {
   console.log(`✅ ${client.user.tag} está conectado y listo!`);
   console.log(`🔢 Conectado a ${client.guilds.cache.size} servidor(es)`);
+  
+  // Verificar si el archivo de audio existe
+  const audioPath = path.join(__dirname, 'notification.mp3');
+  if (fs.existsSync(audioPath)) {
+    console.log('🎵 Archivo de audio encontrado: notification.mp3');
+  } else {
+    console.warn('⚠️ Archivo notification.mp3 no encontrado en la carpeta del proyecto');
+  }
 });
 
 client.on('voiceStateUpdate', async (oldState, newState) => {
@@ -36,14 +46,30 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
         
         console.log(`🔊 Conectado a ${channel.name} (4 usuarios detectados)`);
         
+        // Esperar a que la conexión esté lista
+        connection.on(VoiceConnectionStatus.Ready, () => {
+          console.log('🎵 Conexión de voz lista, reproduciendo audio...');
+          playNotificationSound(connection);
+        });
+        
+        // Si ya está listo, reproducir inmediatamente
+        if (connection.state.status === VoiceConnectionStatus.Ready) {
+          playNotificationSound(connection);
+        }
+        
         // Manejo de errores de conexión
         connection.on('error', (error) => {
           console.error('❌ Error en la conexión de voz:', error);
         });
         
-        // Opcional: Reproduce un audio
-        // Necesitarías también el paquete @discordjs/voice para reproducir audio
-        // connection.play(createAudioResource('notification.mp3'));
+        // Desconectarse después de un tiempo (opcional)
+        setTimeout(() => {
+          if (connection.state.status !== VoiceConnectionStatus.Destroyed) {
+            connection.destroy();
+            console.log('🔇 Desconectado del canal de voz');
+          }
+        }, 10000); // 10 segundos
+        
       } catch (error) {
         console.error('❌ Error al unirse al canal de voz:', error);
       }
@@ -53,12 +79,74 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
   }
 });
 
+// Función para reproducir el sonido de notificación
+function playNotificationSound(connection) {
+  try {
+    const audioPath = path.join(__dirname, 'notification.mp3');
+    
+    // Verificar que el archivo existe
+    if (!fs.existsSync(audioPath)) {
+      console.error('❌ Archivo notification.mp3 no encontrado');
+      return;
+    }
+    
+    // Crear el reproductor de audio
+    const player = createAudioPlayer();
+    const resource = createAudioResource(audioPath, {
+      inlineVolume: true
+    });
+    
+    // Ajustar volumen (opcional, 0.1 = 10%)
+    resource.volume.setVolume(0.5);
+    
+    // Reproducir el audio
+    player.play(resource);
+    connection.subscribe(player);
+    
+    console.log('🎵 Reproduciendo notification.mp3...');
+    
+    // Event listeners del reproductor
+    player.on(AudioPlayerStatus.Playing, () => {
+      console.log('🎵 Audio reproduciéndose');
+    });
+    
+    player.on(AudioPlayerStatus.Idle, () => {
+      console.log('✅ Audio terminado');
+    });
+    
+    player.on('error', (error) => {
+      console.error('❌ Error reproduciendo audio:', error);
+    });
+    
+  } catch (error) {
+    console.error('❌ Error en playNotificationSound:', error);
+  }
+}
+
 client.on('messageCreate', (message) => {
   if (message.author.bot) return;
 
   if (message.content === '!ping') {
     message.reply('🏓 Pong!')
       .catch(error => console.error('❌ Error enviando mensaje:', error));
+  }
+  
+  // Comando para probar el audio
+  if (message.content === '!test-audio') {
+    if (message.member.voice.channel) {
+      const connection = joinVoiceChannel({
+        channelId: message.member.voice.channel.id,
+        guildId: message.guild.id,
+        adapterCreator: message.guild.voiceAdapterCreator,
+      });
+      
+      connection.on(VoiceConnectionStatus.Ready, () => {
+        playNotificationSound(connection);
+        message.reply('🎵 Probando audio...');
+      });
+    } else {
+      message.reply('❌ Debes estar en un canal de voz para probar el audio');
+    }
   }
 });
 
