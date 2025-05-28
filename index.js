@@ -1,6 +1,30 @@
 const { getVoiceConnection } = require('@discordjs/voice'); // Añade esto al inicio con los otros requires
 
-// ... (el resto de tus imports y configuración inicial permanece igual)
+const client = new Client({
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildVoiceStates,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.MessageContent
+  ]
+});
+
+// Variable para evitar múltiples activaciones
+const recentlyProcessed = new Set();
+
+// Eventos básicos del bot
+client.on('ready', () => {
+  console.log(`✅ ${client.user.tag} está conectado y listo!`);
+  console.log(`🔢 Conectado a ${client.guilds.cache.size} servidor(es)`);
+  
+  // Verificar si el archivo de audio existe
+  const audioPath = path.join(__dirname, 'notification.mp3');
+  if (fs.existsSync(audioPath)) {
+    console.log('🎵 Archivo de audio encontrado: notification.mp3');
+  } else {
+    console.warn('⚠️ Archivo notification.mp3 no encontrado en la carpeta del proyecto');
+  }
+});
 
 client.on('voiceStateUpdate', async (oldState, newState) => {
   try {
