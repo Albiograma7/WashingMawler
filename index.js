@@ -1,5 +1,6 @@
 require('dotenv').config();
 const { Client, GatewayIntentBits } = require('discord.js');
+const { joinVoiceChannel } = require('@discordjs/voice');
 
 const client = new Client({
   intents: [
@@ -14,26 +15,29 @@ client.on('ready', () => {
   console.log(`✅ ${client.user.tag} está conectado`);
 });
 
-client.on('voiceStateUpdate', (oldState, newState) => {
+client.on('voiceStateUpdate', async (oldState, newState) => {
   try {
     // Verifica si el cambio ocurrió en un canal de voz
     const channel = newState.channel || oldState.channel;
-    if (!channel || channel.type !== 2 || channel.members.has(client.user.id)) return; // type 2 = GUILD_VOICE
+    if (!channel || channel.type !== 2 || channel.members.has(client.user.id)) return;
 
     const members = channel.members.filter(m => !m.user.bot).size; // Excluye bots
 
     if (members === 4) {
-      channel.join()
-        .then(connection => {
-          console.log(`🔊 Conectado a ${channel.name}`);
-          // Opcional: Reproduce un audio
-          connection.play('notification.mp3').on('finish', () => {
-            connection.disconnect();
-          });
-        })
-        .catch(error => {
-          console.error('Error al unirse:', error);
+      try {
+        const connection = joinVoiceChannel({
+          channelId: channel.id,
+          guildId: channel.guild.id,
+          adapterCreator: channel.guild.voiceAdapterCreator,
         });
+        
+        console.log(`🔊 Conectado a ${channel.name}`);
+        // Opcional: Reproduce un audio
+        // Necesitarías también el paquete @discordjs/voice para reproducir audio
+        // connection.play(createAudioResource('notification.mp3'));
+      } catch (error) {
+        console.error('Error al unirse:', error);
+      }
     }
   } catch (error) {
     console.error('Error en voiceStateUpdate:', error);
